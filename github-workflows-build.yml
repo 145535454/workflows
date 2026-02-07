@@ -1,0 +1,199 @@
+name: 编译 SkyMenus.dylib
+
+on:
+  # 手动触发
+  workflow_dispatch:
+  
+  # 或在推送时自动编译
+  push:
+    branches: [ main, master ]
+    paths:
+      - '**.mm'
+      - '**.m'
+      - '**.cpp'
+      - '**.h'
+
+jobs:
+  build-ios-dylib:
+    name: 编译 iOS 动态库
+    runs-on: macos-latest
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v3
+    
+    - name: 🔍 检查文件
+      run: |
+        echo "检查项目文件..."
+        ls -la
+        echo ""
+        echo "检查 imgui 目录..."
+        ls -la imgui/ || echo "警告: imgui 目录不存在"
+        echo ""
+        echo "检查 Frameworks 目录..."
+        ls -la Frameworks/ || echo "警告: Frameworks 目录不存在"
+    
+    - name: 🛠️ 设置 Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+    
+    - name: 📦 安装工具
+      run: |
+        # 安装 ldid 用于代码签名
+        brew install ldid
+        
+        echo "工具版本信息:"
+        xcrun --version
+        clang --version
+        ldid -V
+    
+    - name: 🔨 编译 SkyMenus.dylib
+      run: |
+        echo "开始编译..."
+        
+        # 设置变量
+        SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+        OUTPUT="SkyMenus.dylib"
+        
+        echo "SDK 路径: $SDK_PATH"
+        
+        # 创建临时目录
+        mkdir -p build/obj
+        
+        # 编译源文件
+        echo "[1/8] 编译 ViewController.mm..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -fobjc-arc -std=c++11 \
+          -I./imgui -I. \
+          -c ViewController.mm -o build/obj/ViewController.o
+        
+        echo "[2/8] 编译 metalbiew.mm..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -fobjc-arc -std=c++11 \
+          -I./imgui -I. \
+          -c metalbiew.mm -o build/obj/metalbiew.o
+        
+        echo "[3/8] 编译 DragView.m..."
+        xcrun clang -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -fobjc-arc \
+          -I. \
+          -c DragView.m -o build/obj/DragView.o
+        
+        echo "[4/8] 编译 imgui.cpp..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -std=c++11 \
+          -I./imgui \
+          -c imgui/imgui.cpp -o build/obj/imgui.o
+        
+        echo "[5/8] 编译 imgui_draw.cpp..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -std=c++11 \
+          -I./imgui \
+          -c imgui/imgui_draw.cpp -o build/obj/imgui_draw.o
+        
+        echo "[6/8] 编译 imgui_widgets.cpp..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -std=c++11 \
+          -I./imgui \
+          -c imgui/imgui_widgets.cpp -o build/obj/imgui_widgets.o
+        
+        echo "[7/8] 编译 imgui_tables.cpp..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -std=c++11 \
+          -I./imgui \
+          -c imgui/imgui_tables.cpp -o build/obj/imgui_tables.o
+        
+        echo "[8/8] 编译 imgui_impl_metal.mm..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -miphoneos-version-min=10.0 -fobjc-arc -std=c++11 \
+          -I./imgui \
+          -c imgui/imgui_impl_metal.mm -o build/obj/imgui_impl_metal.o
+        
+        echo ""
+        echo "链接动态库..."
+        xcrun clang++ -arch arm64 -isysroot "$SDK_PATH" \
+          -dynamiclib \
+          -install_name "@rpath/SkyMenus.dylib" \
+          -Xlinker -rpath -Xlinker "@executable_path/Frameworks" \
+          -framework UIKit \
+          -framework Foundation \
+          -framework Metal \
+          -framework MetalKit \
+          -framework CoreGraphics \
+          -F./Frameworks \
+          -framework JRMemory \
+          build/obj/*.o \
+          -o "$OUTPUT"
+        
+        echo ""
+        echo "✅ 编译完成！"
+    
+    - name: 🔐 代码签名
+      run: |
+        echo "使用 ldid 签名..."
+        ldid -S SkyMenus.dylib
+        
+        echo "签名完成！"
+    
+    - name: 📊 验证文件
+      run: |
+        echo "文件信息:"
+        ls -lh SkyMenus.dylib
+        file SkyMenus.dylib
+        
+        echo ""
+        echo "架构信息:"
+        lipo -info SkyMenus.dylib
+        
+        echo ""
+        echo "依赖库:"
+        otool -L SkyMenus.dylib
+    
+    - name: 📤 上传编译产物
+      uses: actions/upload-artifact@v3
+      with:
+        name: SkyMenus-dylib
+        path: |
+          SkyMenus.dylib
+          Frameworks/JRMemory.framework/
+        retention-days: 30
+    
+    - name: 📝 创建 Release（可选）
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v1.0-${{ github.run_number }}
+        name: SkyMenus v1.0 Build ${{ github.run_number }}
+        body: |
+          自动编译的 SkyMenus.dylib
+          
+          **使用方法:**
+          1. 下载 SkyMenus.dylib
+          2. 使用全能签注入到游戏 IPA
+          3. 详见项目 README
+          
+          **编译信息:**
+          - 提交: ${{ github.sha }}
+          - 时间: ${{ github.event.head_commit.timestamp }}
+          - 架构: arm64
+          - iOS 最低版本: 10.0
+        files: |
+          SkyMenus.dylib
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: ✅ 完成
+      run: |
+        echo ""
+        echo "╔════════════════════════════════════════╗"
+        echo "║         编译成功完成！                 ║"
+        echo "╚════════════════════════════════════════╝"
+        echo ""
+        echo "📥 下载方式:"
+        echo "  1. 点击 Actions 标签"
+        echo "  2. 选择这次运行"
+        echo "  3. 下载 Artifacts"
+        echo ""
