@@ -1,7 +1,7 @@
 name: 编译 SkyMenus
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
   push:
     branches: [ main ]
 
@@ -12,18 +12,33 @@ jobs:
     
     steps:
     - name: 检出代码
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     
-    - name: 检查文件
+    - name: 检查 JRMemory 结构
       run: |
-        echo "=== 检查项目文件 ==="
-        ls -la
+        echo "=== JRMemory.framework 结构 ==="
+        ls -laR Frameworks/JRMemory.framework/
         echo ""
-        echo "=== imgui 目录 ==="
-        ls -la imgui/
+        
+        # 检查是否有二进制文件
+        if [ -f "Frameworks/JRMemory.framework/JRMemory" ]; then
+          echo "✓ JRMemory 二进制文件存在"
+        else
+          echo "⚠️ 警告: 缺少 JRMemory 二进制文件"
+          echo "这可能导致链接失败"
+        fi
+    
+    - name: 修复头文件引用路径
+      run: |
+        echo "修复 metalbiew.mm 中的头文件引用..."
+        
+        # 将 <JRMemory/MemScan.h> 改为 "MemScan.h"
+        sed -i '' 's/#include <JRMemory\/MemScan.h>/#include "MemScan.h"/g' metalbiew.mm
+        
+        echo "✓ 已修复头文件引用"
         echo ""
-        echo "=== Frameworks 目录 ==="
-        ls -la Frameworks/
+        echo "修改后的引用:"
+        grep -n "MemScan.h" metalbiew.mm
     
     - name: 设置 Xcode
       uses: maxim-lobanov/setup-xcode@v1
@@ -38,63 +53,85 @@ jobs:
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         mkdir -p build
         
-        COMMON_FLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=10.0 \
-          -F./Frameworks \
-          -I./Frameworks/JRMemory.framework/Headers \
-          -I./imgui -I. \
-          -std=c++11"
-
+        # 添加 JRMemory Headers 到搜索路径
+        HEADERS="-I./Frameworks/JRMemory.framework/Headers"
+        
         echo "[1/8] ViewController.mm"
-        xcrun clang++ $COMMON_FLAGS -fobjc-arc \
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -std=c++11 $HEADERS -I./imgui -I. \
           -c ViewController.mm -o build/ViewController.o
         
         echo "[2/8] metalbiew.mm"
-        xcrun clang++ $COMMON_FLAGS -fobjc-arc \
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -std=c++11 $HEADERS -I./imgui -I. \
           -c metalbiew.mm -o build/metalbiew.o
         
         echo "[3/8] DragView.m"
-        xcrun clang $COMMON_FLAGS -fobjc-arc \
+        xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -I. \
           -c DragView.m -o build/DragView.o
         
         echo "[4/8] imgui.cpp"
-        xcrun clang++ $COMMON_FLAGS \
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
           -c imgui/imgui.cpp -o build/imgui.o
         
         echo "[5/8] imgui_draw.cpp"
-        xcrun clang++ $COMMON_FLAGS \
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
           -c imgui/imgui_draw.cpp -o build/imgui_draw.o
         
         echo "[6/8] imgui_widgets.cpp"
-        xcrun clang++ $COMMON_FLAGS \
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
           -c imgui/imgui_widgets.cpp -o build/imgui_widgets.o
         
         echo "[7/8] imgui_tables.cpp"
-        xcrun clang++ $COMMON_FLAGS \
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
           -c imgui/imgui_tables.cpp -o build/imgui_tables.o
         
         echo "[8/8] imgui_impl_metal.mm"
-        xcrun clang++ $COMMON_FLAGS -fobjc-arc \
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -std=c++11 -I./imgui \
           -c imgui/imgui_impl_metal.mm -o build/imgui_impl_metal.o
-
     
     - name: 链接动态库
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         
-        xcrun clang++ -arch arm64 -isysroot "$SDK" \
-          -dynamiclib \
-          -install_name "@rpath/SkyMenus.dylib" \
-          -Xlinker -rpath -Xlinker "@executable_path/Frameworks" \
-          -framework UIKit \
-          -framework Foundation \
-          -framework Metal \
-          -framework MetalKit \
-          -framework CoreGraphics \
-          -F./Frameworks \
-          -framework JRMemory \
-          -lc++ \
-          build/*.o \
-          -o SkyMenus.dylib
+        # 尝试链接
+        if [ -f "Frameworks/JRMemory.framework/JRMemory" ]; then
+          echo "使用 JRMemory.framework 链接..."
+          xcrun clang++ -arch arm64 -isysroot "$SDK" \
+            -dynamiclib \
+            -install_name "@rpath/SkyMenus.dylib" \
+            -Xlinker -rpath -Xlinker "@executable_path/Frameworks" \
+            -framework UIKit \
+            -framework Foundation \
+            -framework Metal \
+            -framework MetalKit \
+            -framework CoreGraphics \
+            -F./Frameworks \
+            -framework JRMemory \
+            -lc++ \
+            build/*.o \
+            -o SkyMenus.dylib
+        else
+          echo "⚠️ JRMemory 二进制文件不存在，跳过链接..."
+          echo "编译的 dylib 将无法使用内存修改功能"
+          xcrun clang++ -arch arm64 -isysroot "$SDK" \
+            -dynamiclib \
+            -install_name "@rpath/SkyMenus.dylib" \
+            -framework UIKit \
+            -framework Foundation \
+            -framework Metal \
+            -framework MetalKit \
+            -framework CoreGraphics \
+            -lc++ \
+            build/*.o \
+            -o SkyMenus.dylib
+        fi
     
     - name: 签名
       run: ldid -S SkyMenus.dylib
@@ -115,6 +152,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: SkyMenus-dylib
-        path: |
-          SkyMenus.dylib
-          Frameworks/JRMemory.framework/
+        path: SkyMenus.dylib
