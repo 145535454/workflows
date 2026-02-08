@@ -38,45 +38,44 @@ jobs:
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         mkdir -p build
         
+        COMMON_FLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=10.0 \
+          -F./Frameworks \
+          -I./Frameworks/JRMemory.framework/Headers \
+          -I./imgui -I. \
+          -std=c++11"
+
         echo "[1/8] ViewController.mm"
-        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -fobjc-arc -std=c++11 -I./imgui -I. \
+        xcrun clang++ $COMMON_FLAGS -fobjc-arc \
           -c ViewController.mm -o build/ViewController.o
         
         echo "[2/8] metalbiew.mm"
-        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -fobjc-arc -std=c++11 -I./imgui -I. \
+        xcrun clang++ $COMMON_FLAGS -fobjc-arc \
           -c metalbiew.mm -o build/metalbiew.o
         
         echo "[3/8] DragView.m"
-        xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -fobjc-arc -I. \
+        xcrun clang $COMMON_FLAGS -fobjc-arc \
           -c DragView.m -o build/DragView.o
         
         echo "[4/8] imgui.cpp"
-        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -std=c++11 -I./imgui \
+        xcrun clang++ $COMMON_FLAGS \
           -c imgui/imgui.cpp -o build/imgui.o
         
         echo "[5/8] imgui_draw.cpp"
-        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -std=c++11 -I./imgui \
+        xcrun clang++ $COMMON_FLAGS \
           -c imgui/imgui_draw.cpp -o build/imgui_draw.o
         
         echo "[6/8] imgui_widgets.cpp"
-        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -std=c++11 -I./imgui \
+        xcrun clang++ $COMMON_FLAGS \
           -c imgui/imgui_widgets.cpp -o build/imgui_widgets.o
         
         echo "[7/8] imgui_tables.cpp"
-        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -std=c++11 -I./imgui \
+        xcrun clang++ $COMMON_FLAGS \
           -c imgui/imgui_tables.cpp -o build/imgui_tables.o
         
         echo "[8/8] imgui_impl_metal.mm"
-        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
-          -fobjc-arc -std=c++11 -I./imgui \
+        xcrun clang++ $COMMON_FLAGS -fobjc-arc \
           -c imgui/imgui_impl_metal.mm -o build/imgui_impl_metal.o
+
     
     - name: 链接动态库
       run: |
