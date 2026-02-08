@@ -1,0 +1,121 @@
+name: 编译 SkyMenus
+
+on:
+  workflow_dispatch:  # 手动触发
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: 编译 iOS dylib
+    runs-on: macos-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+    
+    - name: 检查文件
+      run: |
+        echo "=== 检查项目文件 ==="
+        ls -la
+        echo ""
+        echo "=== imgui 目录 ==="
+        ls -la imgui/
+        echo ""
+        echo "=== Frameworks 目录 ==="
+        ls -la Frameworks/
+    
+    - name: 设置 Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+    
+    - name: 安装签名工具
+      run: brew install ldid
+    
+    - name: 编译源文件
+      run: |
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        mkdir -p build
+        
+        echo "[1/8] ViewController.mm"
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -std=c++11 -I./imgui -I. \
+          -c ViewController.mm -o build/ViewController.o
+        
+        echo "[2/8] metalbiew.mm"
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -std=c++11 -I./imgui -I. \
+          -c metalbiew.mm -o build/metalbiew.o
+        
+        echo "[3/8] DragView.m"
+        xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -I. \
+          -c DragView.m -o build/DragView.o
+        
+        echo "[4/8] imgui.cpp"
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
+          -c imgui/imgui.cpp -o build/imgui.o
+        
+        echo "[5/8] imgui_draw.cpp"
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
+          -c imgui/imgui_draw.cpp -o build/imgui_draw.o
+        
+        echo "[6/8] imgui_widgets.cpp"
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
+          -c imgui/imgui_widgets.cpp -o build/imgui_widgets.o
+        
+        echo "[7/8] imgui_tables.cpp"
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -std=c++11 -I./imgui \
+          -c imgui/imgui_tables.cpp -o build/imgui_tables.o
+        
+        echo "[8/8] imgui_impl_metal.mm"
+        xcrun clang++ -arch arm64 -isysroot "$SDK" -miphoneos-version-min=10.0 \
+          -fobjc-arc -std=c++11 -I./imgui \
+          -c imgui/imgui_impl_metal.mm -o build/imgui_impl_metal.o
+    
+    - name: 链接动态库
+      run: |
+        SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+        
+        xcrun clang++ -arch arm64 -isysroot "$SDK" \
+          -dynamiclib \
+          -install_name "@rpath/SkyMenus.dylib" \
+          -Xlinker -rpath -Xlinker "@executable_path/Frameworks" \
+          -framework UIKit \
+          -framework Foundation \
+          -framework Metal \
+          -framework MetalKit \
+          -framework CoreGraphics \
+          -F./Frameworks \
+          -framework JRMemory \
+          -lc++ \
+          build/*.o \
+          -o SkyMenus.dylib
+    
+    - name: 签名
+      run: ldid -S SkyMenus.dylib
+    
+    - name: 验证文件
+      run: |
+        echo "=== 文件信息 ==="
+        ls -lh SkyMenus.dylib
+        file SkyMenus.dylib
+        echo ""
+        echo "=== 架构 ==="
+        lipo -info SkyMenus.dylib
+        echo ""
+        echo "=== 依赖库 ==="
+        otool -L SkyMenus.dylib
+    
+    - name: 上传文件
+      uses: actions/upload-artifact@v3
+      with:
+        name: SkyMenus-dylib
+        path: |
+          SkyMenus.dylib
+          Frameworks/JRMemory.framework/
