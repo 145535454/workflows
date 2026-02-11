@@ -1,4 +1,4 @@
-name: 编译 SkyMenus
+name: 编译 SkyMenus (静态链接版)
 
 on:
   workflow_dispatch:
@@ -7,38 +7,23 @@ on:
 
 jobs:
   build:
-    name: 编译 iOS dylib
+    name: 编译 iOS dylib (包含 JRMemory)
     runs-on: macos-latest
     
     steps:
     - name: 检出代码
       uses: actions/checkout@v4
     
-    - name: 检查 JRMemory 结构
+    - name: 检查文件结构
       run: |
+        echo "=== 项目文件 ==="
+        ls -la
+        echo ""
         echo "=== JRMemory.framework 结构 ==="
         ls -laR Frameworks/JRMemory.framework/
         echo ""
-        
-        # 检查是否有二进制文件
-        if [ -f "Frameworks/JRMemory.framework/JRMemory" ]; then
-          echo "✓ JRMemory 二进制文件存在"
-        else
-          echo "⚠️ 警告: 缺少 JRMemory 二进制文件"
-          echo "这可能导致链接失败"
-        fi
-    
-    - name: 修复头文件引用路径
-      run: |
-        echo "修复 metalbiew.mm 中的头文件引用..."
-        
-        # 将 <JRMemory/MemScan.h> 改为 "MemScan.h"
-        sed -i '' 's/#include <JRMemory\/MemScan.h>/#include "MemScan.h"/g' metalbiew.mm
-        
-        echo "✓ 已修复头文件引用"
-        echo ""
-        echo "修改后的引用:"
-        grep -n "MemScan.h" metalbiew.mm
+        echo "=== 检查 JRMemory 类型 ==="
+        file Frameworks/JRMemory.framework/JRMemory
     
     - name: 设置 Xcode
       uses: maxim-lobanov/setup-xcode@v1
@@ -48,12 +33,17 @@ jobs:
     - name: 安装签名工具
       run: brew install ldid
     
+    - name: 修复头文件引用
+      run: |
+        echo "修复 metalbiew.mm 中的头文件引用..."
+        sed -i '' 's/#include <JRMemory\/MemScan.h>/#include "MemScan.h"/g' metalbiew.mm
+        echo "✓ 已修复"
+    
     - name: 编译源文件
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         mkdir -p build
         
-        # 添加 JRMemory Headers 到搜索路径
         HEADERS="-I./Frameworks/JRMemory.framework/Headers"
         
         echo "[1/8] ViewController.mm"
@@ -96,42 +86,30 @@ jobs:
           -fobjc-arc -std=c++11 -I./imgui \
           -c imgui/imgui_impl_metal.mm -o build/imgui_impl_metal.o
     
-    - name: 链接动态库
+    - name: 链接动态库 (静态链接 JRMemory)
       run: |
         SDK=$(xcrun --sdk iphoneos --show-sdk-path)
         
-        # 尝试链接
-        if [ -f "Frameworks/JRMemory.framework/JRMemory" ]; then
-          echo "使用 JRMemory.framework 链接..."
-          xcrun clang++ -arch arm64 -isysroot "$SDK" \
-            -dynamiclib \
-            -install_name "@rpath/SkyMenus.dylib" \
-            -Xlinker -rpath -Xlinker "@executable_path/Frameworks" \
-            -framework UIKit \
-            -framework Foundation \
-            -framework Metal \
-            -framework MetalKit \
-            -framework CoreGraphics \
-            -F./Frameworks \
-            -framework JRMemory \
-            -lc++ \
-            build/*.o \
-            -o SkyMenus.dylib
-        else
-          echo "⚠️ JRMemory 二进制文件不存在，跳过链接..."
-          echo "编译的 dylib 将无法使用内存修改功能"
-          xcrun clang++ -arch arm64 -isysroot "$SDK" \
-            -dynamiclib \
-            -install_name "@rpath/SkyMenus.dylib" \
-            -framework UIKit \
-            -framework Foundation \
-            -framework Metal \
-            -framework MetalKit \
-            -framework CoreGraphics \
-            -lc++ \
-            build/*.o \
-            -o SkyMenus.dylib
-        fi
+        echo "=== 静态链接 JRMemory 到 SkyMenus.dylib ==="
+        echo "这样就不需要单独的 JRMemory.framework 了！"
+        echo ""
+        
+        xcrun clang++ -arch arm64 -isysroot "$SDK" \
+          -dynamiclib \
+          -install_name "@rpath/SkyMenus.dylib" \
+          -Xlinker -rpath -Xlinker "@executable_path/Frameworks" \
+          -framework UIKit \
+          -framework Foundation \
+          -framework Metal \
+          -framework MetalKit \
+          -framework CoreGraphics \
+          -lc++ \
+          build/*.o \
+          Frameworks/JRMemory.framework/JRMemory \
+          -o SkyMenus.dylib
+        
+        echo ""
+        echo "✓ 链接完成！JRMemory 已包含在 SkyMenus.dylib 中"
     
     - name: 签名
       run: ldid -S SkyMenus.dylib
@@ -147,9 +125,61 @@ jobs:
         echo ""
         echo "=== 依赖库 ==="
         otool -L SkyMenus.dylib
+        echo ""
+        echo "=== 符号检查 ==="
+        nm -g SkyMenus.dylib | grep -i "jrmemory" | head -10 || echo "JRMemory 符号已静态链接"
+    
+    - name: 创建说明文件
+      run: |
+        cat > README.txt << 'EOF'
+        ╔════════════════════════════════════════════════════════════════╗
+        ║         SkyMenus.dylib - 静态链接版                           ║
+        ╚════════════════════════════════════════════════════════════════╝
+
+        本版本已将 JRMemory 静态链接到 SkyMenus.dylib 中
+        
+        ✅ 优点:
+        - 只需要一个文件: SkyMenus.dylib
+        - 不需要单独的 JRMemory.framework
+        - 全能签可以直接识别
+        - 安装更简单
+        
+        📦 全能签使用方法:
+        
+        1. 打开全能签
+        2. 导入游戏 IPA
+        3. 动态库注入设置:
+           - 注入路径: ☑ @executable
+           - 注入目录: Frameworks/
+        4. 添加第三方库:
+           - 只添加这一个文件: SkyMenus.dylib
+        5. 选择证书并签名
+        6. 安装到设备
+        
+        🎮 使用方法:
+        
+        1. 启动游戏，等待 3-5 秒
+        2. 三指三击屏幕显示/隐藏图标
+        3. 单击图标打开菜单
+        4. 首次使用点击"初始化"
+        
+        ⚠️ 注意:
+        - 游戏版本: 0.15.3
+        - 不要修改 Bundle ID
+        - 建议用小号测试
+        
+        ═══════════════════════════════════════════════════════════════
+        编译时间: $(date)
+        版本: 静态链接版
+        ═══════════════════════════════════════════════════════════════
+        EOF
+        
+        cat README.txt
     
     - name: 上传文件
       uses: actions/upload-artifact@v4
       with:
-        name: SkyMenus-dylib
-        path: SkyMenus.dylib
+        name: SkyMenus-Static
+        path: |
+          SkyMenus.dylib
+          README.txt
