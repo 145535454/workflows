@@ -1531,11 +1531,29 @@ static int  kz_item = -1;
             NSLog(@"[SkyMenus] 基址无效！baseAddres1=0x%lx, baseAddres2=0x%lx", _baseAddres1, _baseAddres2);
             
             dispatch_async(dispatch_get_main_queue(), ^{
+                NSString *currentVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+                
+                NSString *message = [NSString stringWithFormat:
+                    @"未找到有效基址\n\n"
+                    @"【调试信息】\n"
+                    @"当前游戏版本: %@\n"
+                    @"需要版本: 0.15.3\n"
+                    @"扫描结果数: %lu\n"
+                    @"baseAddres1: %@\n"
+                    @"baseAddres2: %@\n\n"
+                    @"【解决方法】\n"
+                    @"1. 确认游戏版本是 0.15.3\n"
+                    @"2. 完全进入游戏世界后重试\n"
+                    @"3. 尝试在不同地图初始化\n"
+                    @"4. 重启游戏后重试",
+                    currentVersion ? currentVersion : @"未知",
+                    (unsigned long)results.size(),
+                    _baseAddres1 ? @"已找到" : @"未找到",
+                    _baseAddres2 ? @"已找到" : @"未找到"];
+                
                 UIAlertController *alert = [UIAlertController 
                     alertControllerWithTitle:@"初始化失败" 
-                    message:[NSString stringWithFormat:@"未找到有效基址\n\nbaseAddres1: %@\nbaseAddres2: %@\n\n请重启游戏后重试", 
-                        _baseAddres1 ? @"已找到" : @"未找到",
-                        _baseAddres2 ? @"已找到" : @"未找到"]
+                    message:message
                     preferredStyle:UIAlertControllerStyleAlert];
                 
                 [alert addAction:[UIAlertAction 
@@ -2223,5 +2241,3 @@ static long 先祖[42] = {
 
 
 @end
-
-
