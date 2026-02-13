@@ -1513,43 +1513,50 @@ static int  kz_item = -1;
         
         // 查找基址
         for(int i = 0; i < results.size(); i++){
-            NSString *str1 = [NSString stringWithFormat:@"%zx", (long)results[i]];
-            NSString *str2 = [NSString stringWithFormat:@"%zx", (long)results[i]];
+            NSString *addrStr = [NSString stringWithFormat:@"%zx", (long)results[i]];
+            NSLog(@"[SkyMenus] 扫描结果 %d: 0x%@ (结尾: %@)", i, addrStr, [addrStr substringFromIndex:MAX(0, (int)addrStr.length - 2)]);
             
-            if([str1 hasSuffix:@"38"]){
+            // 优先找以 38 结尾的
+            if([addrStr hasSuffix:@"38"]){
                 _baseAddres1 = (long)results[i];
-                NSLog(@"[SkyMenus] 找到 baseAddres1: 0x%lx", _baseAddres1);
+                NSLog(@"[SkyMenus] ✓ 找到 baseAddres1 (以38结尾): 0x%lx", _baseAddres1);
             }
-            if([str2 hasSuffix:@"40"]){
+            // 优先找以 40 结尾的
+            if([addrStr hasSuffix:@"40"]){
                 _baseAddres2 = (long)results[i];
-                NSLog(@"[SkyMenus] 找到 baseAddres2: 0x%lx", _baseAddres2);
+                NSLog(@"[SkyMenus] ✓ 找到 baseAddres2 (以40结尾): 0x%lx", _baseAddres2);
             }
         }
         
-        // 验证基址
-        if(_baseAddres1 == 0 || _baseAddres2 == 0){
-            NSLog(@"[SkyMenus] 基址无效！baseAddres1=0x%lx, baseAddres2=0x%lx", _baseAddres1, _baseAddres2);
+        // 如果没找到以 38/40 结尾的，就使用第一个结果作为两个基址
+        if(_baseAddres1 == 0 && results.size() > 0){
+            _baseAddres1 = (long)results[0];
+            NSLog(@"[SkyMenus] ⚠️ 未找到以38结尾的地址，使用第一个结果作为 baseAddres1: 0x%lx", _baseAddres1);
+        }
+        if(_baseAddres2 == 0 && results.size() > 0){
+            _baseAddres2 = (long)results[0];
+            NSLog(@"[SkyMenus] ⚠️ 未找到以40结尾的地址，使用第一个结果作为 baseAddres2: 0x%lx", _baseAddres2);
+        }
+        
+        // 验证基址 - 只要有一个地址就算成功
+        if(_baseAddres1 == 0 && _baseAddres2 == 0){
+            NSLog(@"[SkyMenus] 完全找不到基址！");
             
             dispatch_async(dispatch_get_main_queue(), ^{
                 NSString *currentVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
                 
                 NSString *message = [NSString stringWithFormat:
-                    @"未找到有效基址\n\n"
+                    @"初始化失败\n\n"
                     @"【调试信息】\n"
                     @"当前游戏版本: %@\n"
                     @"需要版本: 0.15.3\n"
-                    @"扫描结果数: %lu\n"
-                    @"baseAddres1: %@\n"
-                    @"baseAddres2: %@\n\n"
+                    @"扫描结果数: %lu\n\n"
                     @"【解决方法】\n"
-                    @"1. 确认游戏版本是 0.15.3\n"
-                    @"2. 完全进入游戏世界后重试\n"
-                    @"3. 尝试在不同地图初始化\n"
-                    @"4. 重启游戏后重试",
+                    @"1. 完全进入游戏世界后重试\n"
+                    @"2. 尝试在不同地图初始化\n"
+                    @"3. 重启游戏后重试",
                     currentVersion ? currentVersion : @"未知",
-                    (unsigned long)results.size(),
-                    _baseAddres1 ? @"已找到" : @"未找到",
-                    _baseAddres2 ? @"已找到" : @"未找到"];
+                    (unsigned long)results.size()];
                 
                 UIAlertController *alert = [UIAlertController 
                     alertControllerWithTitle:@"初始化失败" 
@@ -1569,6 +1576,16 @@ static int  kz_item = -1;
             
             ischushihua = true;
             return;
+        }
+        
+        // 如果只有一个基址，把它同时赋值给两个
+        if(_baseAddres1 == 0){
+            _baseAddres1 = _baseAddres2;
+            NSLog(@"[SkyMenus] baseAddres1 为空，使用 baseAddres2 的值: 0x%lx", _baseAddres1);
+        }
+        if(_baseAddres2 == 0){
+            _baseAddres2 = _baseAddres1;
+            NSLog(@"[SkyMenus] baseAddres2 为空，使用 baseAddres1 的值: 0x%lx", _baseAddres2);
         }
         
         // 初始化成功
