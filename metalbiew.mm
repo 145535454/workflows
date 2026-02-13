@@ -1439,204 +1439,37 @@ static int  kz_item = -1;
 }
 #pragma mark - 代码执行
 -(void)chushihuarun{
-    @try {
-        NSLog(@"[SkyMenus] 开始初始化...");
+    NSLog(@"[SkyMenus-TEST] ===== 空初始化测试开始 =====");
+    
+    // 完全不使用 JRMemoryEngine
+    // 不调用 mach_task_self()
+    // 不扫描内存
+    // 只显示提示信息
+    
+    _baseAddres1 = 0;
+    _baseAddres2 = 0;
+    ischushihua = false;
+    
+    NSLog(@"[SkyMenus-TEST] 没有进行任何内存操作");
+    
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIAlertController *alert = [UIAlertController 
+            alertControllerWithTitle:@"🧪 空初始化测试" 
+            message:@"如果你能看到这个提示\n说明:\n\n✅ dylib 加载成功\n✅ 菜单显示正常\n✅ 初始化函数可以运行\n\n❌ 但没有进行内存操作\n\n下一步:\n如果这个不闪退，说明问题在于内存操作触发了游戏的反作弊检测"
+            preferredStyle:UIAlertControllerStyleAlert];
         
-        // 检查游戏版本
-        NSString *version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-        NSLog(@"[SkyMenus] 当前游戏版本: %@", version);
+        [alert addAction:[UIAlertAction 
+            actionWithTitle:@"明白了" 
+            style:UIAlertActionStyleDefault 
+            handler:nil]];
         
-        if(version && ![version isEqualToString:@"0.15.3"]){
-            NSLog(@"[SkyMenus] 版本不匹配！需要 0.15.3，当前是 %@", version);
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertController *alert = [UIAlertController 
-                    alertControllerWithTitle:@"版本不匹配" 
-                    message:[NSString stringWithFormat:@"此插件仅支持 Sky 0.15.3 版本\n\n当前版本: %@\n需要版本: 0.15.3\n\n请下载正确版本的游戏", version]
-                    preferredStyle:UIAlertControllerStyleAlert];
-                
-                [alert addAction:[UIAlertAction 
-                    actionWithTitle:@"确定" 
-                    style:UIAlertActionStyleDefault 
-                    handler:nil]];
-                
-                UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-                if(rootVC){
-                    [rootVC presentViewController:alert animated:YES completion:nil];
-                }
-            });
-            
-            ischushihua = true; // 保持按钮可用
-            return;
+        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+        if(rootVC){
+            [rootVC presentViewController:alert animated:YES completion:nil];
         }
-        
-        NSLog(@"[SkyMenus] 版本检测通过，开始扫描内存...");
-        
-        JRMemoryEngine engine = JRMemoryEngine(mach_task_self());
-        
-        // 缩小扫描范围，更安全
-        AddrRange range = (AddrRange){0x100000000,0x110000000};
-        NSLog(@"[SkyMenus] 扫描范围: 0x%llx - 0x%llx", range.start, range.end);
-        
-        engine.JRScanMemory(range, &baseNum, JR_Search_Type_SInt);
-        vector<void*>results = engine.getAllResults();
-        
-        NSLog(@"[SkyMenus] 扫描完成，找到 %lu 个结果", (unsigned long)results.size());
-        
-        if(results.size() == 0){
-            NSLog(@"[SkyMenus] 未找到特征值！");
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertController *alert = [UIAlertController 
-                    alertControllerWithTitle:@"初始化失败" 
-                    message:@"未找到内存特征值\n\n可能原因:\n1. 游戏版本不是 0.15.3\n2. 游戏内存结构已改变\n3. 需要重启游戏后重试\n\n建议:\n- 确认游戏版本为 0.15.3\n- 重启游戏后再次初始化\n- 或联系插件作者更新"
-                    preferredStyle:UIAlertControllerStyleAlert];
-                
-                [alert addAction:[UIAlertAction 
-                    actionWithTitle:@"确定" 
-                    style:UIAlertActionStyleDefault 
-                    handler:nil]];
-                
-                UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-                if(rootVC){
-                    [rootVC presentViewController:alert animated:YES completion:nil];
-                }
-            });
-            
-            ischushihua = true; // 允许重试
-            return;
-        }
-        
-        // 重置基址
-        _baseAddres1 = 0;
-        _baseAddres2 = 0;
-        
-        // 查找基址
-        for(int i = 0; i < results.size(); i++){
-            NSString *addrStr = [NSString stringWithFormat:@"%zx", (long)results[i]];
-            NSLog(@"[SkyMenus] 扫描结果 %d: 0x%@ (结尾: %@)", i, addrStr, [addrStr substringFromIndex:MAX(0, (int)addrStr.length - 2)]);
-            
-            // 优先找以 38 结尾的
-            if([addrStr hasSuffix:@"38"]){
-                _baseAddres1 = (long)results[i];
-                NSLog(@"[SkyMenus] ✓ 找到 baseAddres1 (以38结尾): 0x%lx", _baseAddres1);
-            }
-            // 优先找以 40 结尾的
-            if([addrStr hasSuffix:@"40"]){
-                _baseAddres2 = (long)results[i];
-                NSLog(@"[SkyMenus] ✓ 找到 baseAddres2 (以40结尾): 0x%lx", _baseAddres2);
-            }
-        }
-        
-        // 如果没找到以 38/40 结尾的，就使用第一个结果作为两个基址
-        if(_baseAddres1 == 0 && results.size() > 0){
-            _baseAddres1 = (long)results[0];
-            NSLog(@"[SkyMenus] ⚠️ 未找到以38结尾的地址，使用第一个结果作为 baseAddres1: 0x%lx", _baseAddres1);
-        }
-        if(_baseAddres2 == 0 && results.size() > 0){
-            _baseAddres2 = (long)results[0];
-            NSLog(@"[SkyMenus] ⚠️ 未找到以40结尾的地址，使用第一个结果作为 baseAddres2: 0x%lx", _baseAddres2);
-        }
-        
-        // 验证基址 - 只要有一个地址就算成功
-        if(_baseAddres1 == 0 && _baseAddres2 == 0){
-            NSLog(@"[SkyMenus] 完全找不到基址！");
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                NSString *currentVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-                
-                NSString *message = [NSString stringWithFormat:
-                    @"初始化失败\n\n"
-                    @"【调试信息】\n"
-                    @"当前游戏版本: %@\n"
-                    @"需要版本: 0.15.3\n"
-                    @"扫描结果数: %lu\n\n"
-                    @"【解决方法】\n"
-                    @"1. 完全进入游戏世界后重试\n"
-                    @"2. 尝试在不同地图初始化\n"
-                    @"3. 重启游戏后重试",
-                    currentVersion ? currentVersion : @"未知",
-                    (unsigned long)results.size()];
-                
-                UIAlertController *alert = [UIAlertController 
-                    alertControllerWithTitle:@"初始化失败" 
-                    message:message
-                    preferredStyle:UIAlertControllerStyleAlert];
-                
-                [alert addAction:[UIAlertAction 
-                    actionWithTitle:@"确定" 
-                    style:UIAlertActionStyleDefault 
-                    handler:nil]];
-                
-                UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-                if(rootVC){
-                    [rootVC presentViewController:alert animated:YES completion:nil];
-                }
-            });
-            
-            ischushihua = true;
-            return;
-        }
-        
-        // 如果只有一个基址，把它同时赋值给两个
-        if(_baseAddres1 == 0){
-            _baseAddres1 = _baseAddres2;
-            NSLog(@"[SkyMenus] baseAddres1 为空，使用 baseAddres2 的值: 0x%lx", _baseAddres1);
-        }
-        if(_baseAddres2 == 0){
-            _baseAddres2 = _baseAddres1;
-            NSLog(@"[SkyMenus] baseAddres2 为空，使用 baseAddres1 的值: 0x%lx", _baseAddres2);
-        }
-        
-        // 初始化成功
-        ischushihua = false;
-        
-        NSLog(@"[SkyMenus] ✅ 初始化成功！");
-        NSLog(@"[SkyMenus] baseAddres1 = 0x%lx", _baseAddres1);
-        NSLog(@"[SkyMenus] baseAddres2 = 0x%lx", _baseAddres2);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *alert = [UIAlertController 
-                alertControllerWithTitle:@"✅ 初始化成功" 
-                message:[NSString stringWithFormat:@"内存基址已找到！\n\nbaseAddres1: 0x%lx\nbaseAddres2: 0x%lx\n\n现在可以使用所有功能了", _baseAddres1, _baseAddres2]
-                preferredStyle:UIAlertControllerStyleAlert];
-            
-            [alert addAction:[UIAlertAction 
-                actionWithTitle:@"开始使用" 
-                style:UIAlertActionStyleDefault 
-                handler:nil]];
-            
-            UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-            if(rootVC){
-                [rootVC presentViewController:alert animated:YES completion:nil];
-            }
-        });
-        
-    } @catch (NSException *exception) {
-        // 捕获所有异常，防止崩溃
-        NSLog(@"[SkyMenus] ❌ 初始化异常: %@", exception);
-        NSLog(@"[SkyMenus] 异常原因: %@", exception.reason);
-        NSLog(@"[SkyMenus] 调用栈: %@", exception.callStackSymbols);
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *alert = [UIAlertController 
-                alertControllerWithTitle:@"初始化错误" 
-                message:[NSString stringWithFormat:@"发生异常，已捕获防止崩溃\n\n异常信息:\n%@\n\n原因:\n%@\n\n请截图此信息并联系插件作者", exception.name, exception.reason]
-                preferredStyle:UIAlertControllerStyleAlert];
-            
-            [alert addAction:[UIAlertAction 
-                actionWithTitle:@"确定" 
-                style:UIAlertActionStyleDefault 
-                handler:nil]];
-            
-            UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-            if(rootVC){
-                [rootVC presentViewController:alert animated:YES completion:nil];
-            }
-        });
-        
-        ischushihua = true; // 允许重试
-    }
+    });
+    
+    NSLog(@"[SkyMenus-TEST] ===== 测试完成 =====");
 }
 
 #pragma mark -魔法区
